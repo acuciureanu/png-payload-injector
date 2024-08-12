@@ -2,6 +2,10 @@
 
 PNG Payload Injector is a command-line tool that allows you to embed custom payloads into PNG files and generate corresponding HTML proofs of concept (PoCs). This tool is designed for security testing, educational purposes, and demonstrating certain types of vulnerabilities.
 
+## The research behind
+
+This was a tool that I wrote in PHP back in 2016 after reading a research paper from Adam Logue's blog. [Revisiting XSS payloads in PNG IDAT chunks](https://www.adamlogue.com/revisiting-xss-payloads-in-png-idat-chunks/)
+
 ## 🚨 CAUTION
 
 This tool is for educational and testing purposes only. Do not use it for malicious purposes or against systems you don't own or have explicit permission to test.
