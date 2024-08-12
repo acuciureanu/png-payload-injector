@@ -1,49 +1,98 @@
 name: Release
 
+permissions:
+  contents: write
+
 on:
   push:
     tags:
-      - 'v*.*.*' # Triggers on version tags like v1.0.0
+      - '*-?v[0-9]+*' # Triggers on version tags like v1.0.0
   workflow_dispatch: # Allows manual triggering from the GitHub Actions UI
 
 env:
   CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
 
 jobs:
-  build:
-    name: Build and Release
+  create-release:
     runs-on: ubuntu-latest
+    outputs:
+      has-releases: ${{ steps.create-release.outputs.has-releases }}
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v3
+      - name: Install Rust
+        run: rustup update stable --no-self-update && rustup default stable
+      - name: Install cargo-dist
+        run: cargo install cargo-dist
+      - id: create-release
+        run: |
+          cargo dist plan --tag=${{ github.ref_name }} --output-format=json > dist-manifest.json
+          echo "dist plan ran successfully"
+          cat dist-manifest.json
+
+          # Create the GitHub Release™ based on what cargo-dist thinks it should be
+          ANNOUNCEMENT_TITLE=$(jq --raw-output ".announcement_title" dist-manifest.json)
+          IS_PRERELEASE=$(jq --raw-output ".announcement_is_prerelease" dist-manifest.json)
+          jq --raw-output ".announcement_github_body" dist-manifest.json > new_dist_announcement.md
+          gh release create ${{ github.ref_name }} --draft --prerelease="$IS_PRERELEASE" --title="$ANNOUNCEMENT_TITLE" --notes-file=new_dist_announcement.md
+          echo "created announcement!"
+
+          # Upload the manifest to the GitHub Release™
+          gh release upload ${{ github.ref_name }} dist-manifest.json
+          echo "uploaded manifest!"
+
+          # Disable all the upload-artifacts tasks if we have no actual releases
+          HAS_RELEASES=$(jq --raw-output ".releases != null" dist-manifest.json)
+          echo "has-releases=$HAS_RELEASES" >> "$GITHUB_OUTPUT"
+
+  upload-artifacts:
+    needs: create-release
+    if: ${{ needs.create-release.outputs.has-releases == 'true' }}
     strategy:
       matrix:
-        target: [x86_64-unknown-linux-gnu, x86_64-apple-darwin, x86_64-pc-windows-msvc]
+        include:
+          - os: macos-11
+            dist-args: --artifacts=local --target=aarch64-apple-darwin --target=x86_64-apple-darwin
+            install-dist: cargo install cargo-dist
+          - os: ubuntu-20.04
+            dist-args: --artifacts=local --target=x86_64-unknown-linux-gnu
+            install-dist: cargo install cargo-dist
+          - os: windows-2019
+            dist-args: --artifacts=local --target=x86_64-pc-windows-msvc
+            install-dist: cargo install cargo-dist
+
+    runs-on: ${{ matrix.os }}
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
-    - uses: actions/checkout@v3
+      - uses: actions/checkout@v3
+      - name: Install Rust
+        run: rustup update stable --no-self-update && rustup default stable
+      - name: Install cargo-dist
+        run: ${{ matrix.install-dist }}
+      - name: Run cargo-dist
+        run: |
+          cargo dist build --tag=${{ github.ref_name }} --output-format=json ${{ matrix.dist-args }} > dist-manifest.json
+          echo "dist ran successfully"
+          cat dist-manifest.json
 
-    - name: Install Rust
-      uses: actions-rs/toolchain@v1
-      with:
-        toolchain: stable
-        target: ${{ matrix.target }}
-        override: true
+          # Parse out what we just built and upload it to the GitHub Release™
+          jq --raw-output ".artifacts[]?.path | select( . != null )" dist-manifest.json > uploads.txt
+          echo "uploading..."
+          cat uploads.txt
+          gh release upload ${{ github.ref_name }} $(cat uploads.txt)
+          echo "uploaded!"
 
-    - name: Build the project
-      run: cargo build --release --target ${{ matrix.target }}
-
-    - name: Package the binaries
-      run: |
-        mkdir -p dist
-        if [ "${{ matrix.target }}" = "x86_64-pc-windows-msvc" ]; then
-          zip -j dist/${{ matrix.target }}.zip target/${{ matrix.target }}/release/png_payload_injector.exe
-        else
-          tar czf dist/${{ matrix.target }}.tar.gz -C target/${{ matrix.target }}/release png_payload_injector
-        fi
-
-    - name: Upload Release Asset
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ github.event.release.upload_url }}
-        asset_path: dist/${{ matrix.target }}.*
-        asset_name: png_payload_injector-${{ matrix.target }}.${{ matrix.target == 'x86_64-pc-windows-msvc' && 'zip' || 'tar.gz' }}
-        asset_content_type: application/octet-stream
+  publish-release:
+    needs: [create-release, upload-artifacts]
+    if: ${{ always() && needs.create-release.result == 'success' && (needs.upload-artifacts.result == 'skipped' || needs.upload-artifacts.result == 'success') }}
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v3
+      - name: Mark release as non-draft
+        run: |
+          gh release edit ${{ github.ref_name }} --draft=false
