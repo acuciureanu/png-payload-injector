@@ -1,0 +1,49 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*' # Triggers on version tags like v1.0.0
+  workflow_dispatch: # Allows manual triggering from the GitHub Actions UI
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Build and Release
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target: [x86_64-unknown-linux-gnu, x86_64-apple-darwin, x86_64-pc-windows-msvc]
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Install Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        target: ${{ matrix.target }}
+        override: true
+
+    - name: Build the project
+      run: cargo build --release --target ${{ matrix.target }}
+
+    - name: Package the binaries
+      run: |
+        mkdir -p dist
+        if [ "${{ matrix.target }}" = "x86_64-pc-windows-msvc" ]; then
+          zip -j dist/${{ matrix.target }}.zip target/${{ matrix.target }}/release/png_payload_injector.exe
+        else
+          tar czf dist/${{ matrix.target }}.tar.gz -C target/${{ matrix.target }}/release png_payload_injector
+        fi
+
+    - name: Upload Release Asset
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ github.event.release.upload_url }}
+        asset_path: dist/${{ matrix.target }}.*
+        asset_name: png_payload_injector-${{ matrix.target }}.${{ matrix.target == 'x86_64-pc-windows-msvc' && 'zip' || 'tar.gz' }}
+        asset_content_type: application/octet-stream
