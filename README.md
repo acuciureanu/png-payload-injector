@@ -20,6 +20,12 @@ This tool is for educational and testing purposes only. Do not use it for malici
 
 ## 🛠 Installation
 
+### Option 1: Download from Releases
+
+You can download precompiled binaries for your operating system from the [Releases](https://github.com/acuciureanu/png-payload-injector/releases) section on GitHub. Simply download the binary for your platform, extract it, and run the `png_payload_injector` executable.
+
+### Option 2: Build from Source
+
 1. Clone the repository:
 
    ```sh
