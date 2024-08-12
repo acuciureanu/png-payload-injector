@@ -11,3 +11,20 @@ rayon = "1.10.0"
 base64 = "0.22.1"
 clap = { version = "^4.5.15", features = ["derive"] }
 clap_derive = "4.5.13"
+
+[profile.dist]
+inherits = "release"
+lto = "thin"
+
+[workspace.metadata.dist]
+
+cargo-dist-version = "0.12.2"
+
+installers = []
+
+targets = [
+    "aarch64-apple-darwin",
+    "x86_64-apple-darwin",
+    "x86_64-unknown-linux-gnu",
+    "x86_64-pc-windows-msvc",
+]
